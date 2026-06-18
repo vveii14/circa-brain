@@ -1,0 +1,60 @@
+# ============================================================================
+# adhd_NG_3DSCTF_Contra  —  training recipe for the joint 3D-SCTF + NeuroGraph
+# contrastive model (paper Table 1: NeuroGraph + 3DSC-TF), seed 42.
+#
+# Hyperparameters recovered verbatim from the embedded cfg of the bundled
+# checkpoint (checkpoints/fold1_best.pth).
+#
+# Tip: the ADHD image data is ~9 GB; for fast, stall-free loading copy
+# data/adhd/*.npy to a RAM disk and set adhd_data_dir: /dev/shm/adhd_data.
+# ============================================================================
+
+seed: 42
+device: cuda
+
+# --- data ---
+data_root: ./data
+adhd_data_dir: ./data/adhd
+n_rois: 116
+roi_matrices_file: roi_matrices_775.npy
+image_shape: [96, 96, 96]
+num_classes: 2
+
+# --- optimization ---
+batch_size: 18
+epochs: 40
+lr: 0.00023816800631162475
+weight_decay: 3.981780513861429e-06
+dropout: 0.1776180790534864
+label_smoothing: 0.08832787784276229
+max_grad_norm: 2.0
+
+# --- image branch: 3D-SCTF (exact paper recipe) ---
+use_image_branch: true
+image_encoder: 3dsctf
+image_feat_dim: 256
+image_encoder_kwargs:
+  img_size: 96
+  patch_size: 32
+  embed_dim: 96
+  depth: 8
+  num_heads: 8
+  mlp_ratio: 2.523099385226722
+  qkv_bias: false
+  drop_path_rate: 0.12210055856108193
+
+# --- ROI branch: NeuroGraph / BrainNet ResidualGNN ---
+use_roi_branch: true
+roi_encoder: neurograph
+roi_feat_dim: 256
+roi_encoder_kwargs:
+  hidden_channels: 64
+  hidden_mlp: 128
+  num_layers: 3
+  gnn_name: SAGEConv
+  edge_top_p: 0.12653208064924712
+
+# --- fusion: contrastive ---
+fusion: contrastive
+contrastive_temperature: 0.03124888239143141
+contrastive_weight: 0.43019728220797776

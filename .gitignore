@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+logs_*/
+/dev/shm/
+# full dataset (place locally; only the 10-sample demo is committed)
+data/adhd/adhd_fold*_775.npy
+data/adhd/roi_matrices_775.npy
