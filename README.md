@@ -23,10 +23,12 @@ providers). You prepare it yourself into the format below; a 10-sample subset is
 verify the code first. Both datasets use the **same format** and AAL-116 atlas; they differ only in
 the subject count (and the fold-file suffix).
 
-| Dataset | Subjects (label 0 / 1) | Image array | Connectivity file | Fold suffix |
-|---|---|---|---|---|
-| ADHD-200 | 775 (454 / 321) | `(96, 96, 96)` | `roi_matrices_775.npy` `(775, 116, 116)` | `_775` |
-| ABIDE | 987 (520 / 467) | `(96, 96, 96)` | `roi_matrices_987.npy` `(987, 116, 116)` | `_987` |
+| Dataset | Image array | Connectivity file | Fold files |
+|---|---|---|---|
+| ADHD-200 | `(96, 96, 96)` | `roi_matrices_<N>.npy` `(N, 116, 116)` | `adhd_fold1..5_<N>.npy` |
+| ABIDE | `(96, 96, 96)` | `roi_matrices_<N>.npy` `(N, 116, 116)` | `abide_fold1..5_<N>.npy` |
+
+`<N>` is the subject count, used as the fold-file suffix (configured per dataset in `data/<dataset>/meta.json`).
 
 ### Expected format
 
@@ -63,7 +65,7 @@ with values in `[-1, 1]`.
    matrix (`[-1, 1]`); stack across subjects into `roi_matrices_<N>.npy`, in the same order as the
    image array.
 
-The loader (`data/adhd.py`) concatenates `adhd_fold1_775.npy ... adhd_fold5_775.npy` into the full
+The loader (`data/adhd.py`) concatenates `adhd_fold1_<N>.npy ... adhd_fold5_<N>.npy` into the full
 subject set and builds the split with `StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)`.
 
 ### What the model receives (per batch of B subjects)
@@ -93,7 +95,7 @@ python train_kfold.py \
 
 ## Reproduce the paper
 
-Place your prepared `adhd_fold1_775.npy ... adhd_fold5_775.npy` and `roi_matrices_775.npy` in
+Place your prepared `adhd_fold1_<N>.npy ... adhd_fold5_<N>.npy` and `roi_matrices_<N>.npy` in
 `data/adhd/` (or point `adhd_data_dir` in `config.yaml` elsewhere), then:
 
 ```bash
@@ -106,7 +108,7 @@ CUDA_VISIBLE_DEVICES=0 python train_kfold.py \
 `--mode image_only` / `--mode roi_only` run the single-branch ablations with the same backbones.
 `config.yaml` is the exact training recipe; `set_seed()` fixes all RNGs and enables deterministic
 cuDNN/cuBLAS, so a fixed `--seed` gives the same per-fold results across runs. ABIDE runs identically
-with the `_987` fold files in place.
+with the ABIDE fold files in place.
 
 ### Evaluate the trained checkpoints
 
