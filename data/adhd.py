@@ -22,11 +22,11 @@ def _load_adhd_all(
     fold_prefix: str = "adhd",
     fold_suffix: str = "775",
 ):
-    """Load 5 folds (cached) or adhd_test_775.npy (10 samples). use_test_set_only=True loads only the test file. If precompute_roi, return (data, roi_vectors)."""
-    key_data = str(data_dir) + ("_test" if use_test_set_only else "") + f"_{fold_prefix}_{fold_suffix}"
+    """Load the 5 full folds (cached) or the bundled 10-sample demo (adhd_demo10.npy). use_test_set_only=True loads only the demo file. If precompute_roi, return (data, roi_vectors)."""
+    key_data = str(data_dir) + ("_demo" if use_test_set_only else "") + f"_{fold_prefix}_{fold_suffix}"
     if key_data not in _ADHD_CACHE:
-        test_file = data_dir / f"{fold_prefix}_test_{fold_suffix}.npy"
-        fallback_test_file = data_dir / "adhd_test_775.npy"
+        test_file = data_dir / f"{fold_prefix}_demo10.npy"
+        fallback_test_file = data_dir / "adhd_demo10.npy"
         fold1 = data_dir / f"{fold_prefix}_fold1_{fold_suffix}.npy"
         fallback_fold1 = data_dir / "adhd_fold1_775.npy"
         if use_test_set_only:
@@ -143,9 +143,9 @@ class ADHDDataset(Dataset):
         )
         self._roi_vec = None
         self._roi_mat = None  # (N, n_rois, n_rois) when loading precomputed matrices
-        # When using test set (10 samples), use test_roi_matrices_775.npy if not specified
-        if use_roi and roi_matrices_file is None and len(self._data) == 10 and (data_dir / "test_roi_matrices_775.npy").exists():
-            roi_matrices_file = "test_roi_matrices_775.npy"
+        # For the bundled 10-sample demo, default to its matching ROI matrices.
+        if use_roi and roi_matrices_file is None and len(self._data) == 10 and (data_dir / "roi_matrices_demo10.npy").exists():
+            roi_matrices_file = "roi_matrices_demo10.npy"
         if use_roi:
             if roi_matrices_file:
                 mat_path = data_dir / roi_matrices_file
@@ -208,7 +208,7 @@ def get_adhd_meta(
     fold_prefix: str = "adhd",
     fold_suffix: str = "775",
 ) -> Tuple[List[int], np.ndarray]:
-    """Return (list of indices 0..N-1, labels array) for StratifiedKFold. If use_test_set_only, load adhd_test_775.npy (10 samples)."""
+    """Return (list of indices 0..N-1, labels array) for StratifiedKFold. If use_test_set_only, load the 10-sample demo (adhd_demo10.npy)."""
     data_dir = Path(data_dir)
     data = _load_adhd_all(
         data_dir,

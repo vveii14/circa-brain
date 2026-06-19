@@ -154,7 +154,7 @@ def run_one_fold(cfg, data_path, train_idx, val_idx, fold, device, log_fn, image
     log_fn(f"[Fold {fold}] Step: loading data (dataset={dataset_name}, path={data_path})")
     if dataset_name in ("adhd", "abide"):
         use_test_set_only = cfg.get("adhd_use_test_set_only", False)
-        roi_matrices_file = "test_roi_matrices_775.npy" if use_test_set_only else cfg.get("roi_matrices_file")
+        roi_matrices_file = "roi_matrices_demo10.npy" if use_test_set_only else cfg.get("roi_matrices_file")
         fold_prefix = cfg.get("_fold_prefix", "adhd")
         fold_suffix = cfg.get("_fold_suffix", "775")
         train_ds = ADHDDataset(
@@ -449,7 +449,7 @@ def main():
     parser.add_argument("--weight_decay", type=float, default=None, help="Override weight_decay in config.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--balance_classes", action="store_true", help="For brain_structure: undersample to equalize AD/CN counts before 5-fold split.")
-    parser.add_argument("--use_test_set", action="store_true", help="Demo mode: run on the bundled 10-sample set (adhd_test_775.npy) instead of the full folds.")
+    parser.add_argument("--use_test_set", action="store_true", help="Demo mode: run on the bundled 10-sample set (adhd_demo10.npy) instead of the full folds.")
     parser.add_argument("--output_dir", type=str, default=None, help="If set, write log and checkpoints under this dir (e.g. for parallel runs).")
     args = parser.parse_args()
 
