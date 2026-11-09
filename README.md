@@ -1,121 +1,80 @@
 # CIRCA — Contrastive Imaging–ROI Cross-view Alignment
 
-Official PyTorch implementation of **"Joint Imaging–ROI Representation Learning via Cross-View
-Contrastive Alignment for Brain Disorder Classification"** (MICCAI 2026).
+This repository contains the archived seed-42 ADHD classification checkpoints
+and their inference code from `adhd_NG_3DSCTF_seed42_archive`.
 
-This release contains the single joint model used in the paper — a 3D-SCTF imaging encoder and a
-NeuroGraph ROI-graph encoder aligned by a cross-view contrastive objective — together with the
-trained ADHD-200 checkpoints and a small bundled subset so the pipeline can be run without the full
-dataset.
+## Current checkpoint evaluation
 
-## Setup
-
-```bash
-git clone https://github.com/vveii14/circa-brain.git
-cd circa-brain
-pip install -r requirements.txt   # torch, torch-geometric, numpy, scikit-learn, PyYAML
-```
-
-## Data
-
-The full ADHD-200 / ABIDE data is **not redistributed here** (access is governed by the original
-providers). You prepare it yourself into the format below; a 10-sample subset is bundled so you can
-verify the code first. Both datasets use the **same format** and AAL-116 atlas; they differ only in
-the subject count (and the fold-file suffix).
-
-| Dataset | Image array | Connectivity file | Fold files |
-|---|---|---|---|
-| ADHD-200 | `(96, 96, 96)` | `roi_matrices_<N>.npy` `(N, 116, 116)` | `adhd_fold1..5_<N>.npy` |
-| ABIDE | `(96, 96, 96)` | `roi_matrices_<N>.npy` `(N, 116, 116)` | `abide_fold1..5_<N>.npy` |
-
-`<N>` is the subject count, used as the fold-file suffix (configured per dataset in `data/<dataset>/meta.json`).
-
-### Expected format
-
-Subjects are stored as a NumPy **object array** (`.npy`, `allow_pickle=True`); element `i` is a dict:
-
-```python
-{
-  "raw_img_np": np.float32 (96, 96, 96),            # imaging-branch input, intensity-normalized to ~[0,1]
-  "raw_img_aal_mask_np": np.float32 (96, 96, 96),   # AAL-116 parcellation, aligned to raw_img_np
-  "label": int,                                      # 0 = control (TDC), 1 = ADHD / ASD
-}
-```
-
-The ROI branch consumes a separate per-subject connectivity tensor, aligned by row order:
-
-```
-roi_matrices_<N>.npy  ->  np.float32 (N, 116, 116)   # row i is subject i's matrix
-```
-
-Each `116 x 116` is the subject's **ROI-by-ROI Pearson correlation matrix** over the 116 AAL regions,
-with values in `[-1, 1]`.
-
-> The ROI branch reads **only** `roi_matrices_<N>.npy`. The companion `roi_vectors_<N>.npy` files are
-> legacy and unused by this model (the ADHD one is all-zeros) — ignore them.
-
-### Preprocessing (raw scans → the format above)
-
-1. **Imaging volume.** Intensity-normalize each subject's brain volume to `~[0, 1]` and resample to
-   `96 x 96 x 96`, giving `raw_img_np`.
-2. **AAL parcellation.** Register the AAL-116 atlas onto the same grid to get `raw_img_aal_mask_np`
-   (voxel values = region id `1..116`).
-3. **Correlation matrix.** For each subject, derive a per-region descriptor from `raw_img_np` over
-   the 116 AAL regions and compute their pairwise **Pearson correlation** to form the `116 x 116`
-   matrix (`[-1, 1]`); stack across subjects into `roi_matrices_<N>.npy`, in the same order as the
-   image array.
-
-The loader (`data/adhd.py`) concatenates `adhd_fold1_<N>.npy ... adhd_fold5_<N>.npy` into the full
-subject set and builds the split with `StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)`.
-
-### What the model receives (per batch of B subjects)
-
-```
-Imaging branch (3D-SCTF):  (B, 1, 96, 96, 96)  ->  (B, 256)
-ROI branch (NeuroGraph):   (B, 116, 116)        ->  (B, 256)
-    each matrix -> a 116-node graph: node features = rows of the matrix (116-d),
-    edges = strongest upper-triangular entries (top edge_top_p ~ 0.13)
-Fusion (contrastive):  concat (B, 512) -> MLP -> (B, 2) logits,
-    plus a contrastive loss aligning the two 256-d embeddings
-```
-
-### Bundled demo subset
-
-`data/adhd/adhd_demo10.npy` (10 balanced subjects) and `data/adhd/roi_matrices_demo10.npy`
-(`10 x 116 x 116`) are included so you can run the pipeline immediately. Select them with
-`--use_test_set`. Ten samples only verify that the code runs; the numbers are not meaningful.
+The evaluation entry point imports the archived implementation from `code/`.
+The checkpoint configuration uses a **3DSCTF image encoder** and a
+**BrainNet ResidualGNNs ROI encoder with GraphSAGE (SAGEConv)**. The archive
+name contains `NG`, but the implementation uses the `brainnet` registry key.
+Both branches produce 256-dimensional embeddings. Classification uses their
+concatenation; the model also defines a symmetric InfoNCE alignment loss.
+The archive does not contain the original training loop, so the saved
+configuration alone does not establish how that loss was used during training.
 
 ```bash
-python train_kfold.py \
-    --dataset adhd --mode fusion --fusion contrastive \
-    --config config.yaml --use_test_set \
-    --n_folds 5 --batch_size 4 --epochs 2 --seed 42 \
-    --output_dir logs_demo
+pip install -r requirements.txt
+python eval_checkpoints.py
+# Optional checkpoint and data directories:
+python eval_checkpoints.py checkpoints /path/to/adhd
 ```
 
-## Reproduce the paper
+Default data location: `./data/adhd`. Required files:
 
-Place your prepared `adhd_fold1_<N>.npy ... adhd_fold5_<N>.npy` and `roi_matrices_<N>.npy` in
-`data/adhd/` (or point `adhd_data_dir` in `config.yaml` elsewhere), then:
+- `adhd_fold1_775.npy` through `adhd_fold5_775.npy`: NumPy object arrays of
+  subject dictionaries containing `raw_img_np` (96 x 96 x 96) and binary `label`.
+- `roi_matrices_775.npy`: aligned per-subject 116 x 116 correlation matrices.
+  Matrix row order must match concatenation of the five image files in order.
 
-```bash
-CUDA_VISIBLE_DEVICES=0 python train_kfold.py \
-    --dataset adhd --mode fusion --fusion contrastive \
-    --config config.yaml --n_folds 5 --seed 42 \
-    --output_dir logs_run
-```
+Supply the original prepared data in its original order. The full dataset is
+not included. The archived loader can fall back to ROI vectors when the matrix
+file is absent; that changes the model input and is not a valid substitute for
+reproducing the matrix-based checkpoint evaluation.
 
-`--mode image_only` / `--mode roi_only` run the single-branch ablations with the same backbones.
-`config.yaml` is the exact training recipe; `set_seed()` fixes all RNGs and enables deterministic
-cuDNN/cuBLAS, so a fixed `--seed` gives the same per-fold results across runs. ABIDE runs identically
-with the ABIDE fold files in place.
+The evaluator concatenates the five files and reconstructs
+`StratifiedKFold(n_splits=5, shuffle=True, random_state=42)`. It applies a fixed
+classification threshold of 0.5 without fitting a threshold during evaluation.
+It prints Accuracy, AUC, Sensitivity, Specificity and macro-F1 in percent,
+including the five-fold mean and sample standard deviation; argmax results
+are also printed. These are reconstructed validation-fold results, not evidence
+of an independent test set. Original split IDs and training logs are not in the
+archive, so exact split correspondence and checkpoint-selection independence
+cannot be verified from this archive alone.
 
-### Evaluate the trained checkpoints
+### Saved checkpoint metadata
 
-`checkpoints/foldN_best.pth` are the trained weights (each embeds its full `cfg`). Evaluating them
-reconstructs the seed-42 validation folds, so the **full** `data/adhd/` must be in place:
+These values are stored in the checkpoints, not freshly measured results:
 
-```bash
-python eval_checkpoints.py                            # ./checkpoints + ./data/adhd
-python eval_checkpoints.py checkpoints /dev/shm/adhd_data   # data staged on a RAM disk
-```
+| Fold | Saved epoch | Saved validation AUC (%) |
+|---|---:|---:|
+| 1 | 36 | 83.90 |
+| 2 | 35 | 70.96 |
+| 3 | 33 | 71.12 |
+| 4 | 39 | 70.00 |
+| 5 | 27 | 70.84 |
+
+Mean saved validation AUC: 73.37 +/- 5.90 percentage points (sample SD).
+
+## Archive integrity and layout
+
+- `checkpoints/`: the five archived weights.
+- `code/`: the archived model, dataset and inference utility implementations.
+- `eval_checkpoints.py`: archive evaluator with portable repository-local defaults
+  and the existing optional `CHECKPOINT_DIR DATA_DIR` command-line interface.
+- `MD5SUMS`: checksums for the current inference release; run `md5sum -c MD5SUMS`.
+- `ARCHIVE_MD5SUMS`: original archive manifest for provenance. Its evaluator hash
+  differs because of the documented path/interface adaptation above.
+
+The checkpoint files are byte-identical to the previous repository version;
+this update restores the archive inference code and corrects the documentation.
+
+## Earlier training and demo code
+
+The root-level `train_kfold.py`, `models/`, `data/`, and `config.yaml` are retained
+from the earlier release. They are separate from the archived inference code
+under `code/`; the current evaluator does not import the earlier training script.
+The bundled ten-subject demo is retained for that earlier pipeline, and cannot
+reproduce the full-data checkpoint metrics. The earlier training pipeline has
+not been verified as the original producer of these archived weights.
