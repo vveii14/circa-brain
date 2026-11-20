@@ -99,17 +99,3 @@ CIRCA/
 ```
 
 The evaluation entry point imports the archived implementations from `code/` to preserve consistency with the released checkpoints.
-
-## 6. Reproducibility Notes
-
-This release is intended to support evaluation of the archived checkpoints rather than end-to-end reproduction of the original training procedure.
-
-For consistent checkpoint evaluation:
-
-- Use the original prepared dataset and preserve subject ordering.
-- Provide the aligned `(116, 116)` ROI connectivity matrices.
-- Use the reconstructed five-fold splits with `random_state=42`.
-- Apply the fixed classification threshold of `0.5`.
-- Interpret the reported metrics as reconstructed validation-fold results, not independent test-set performance.
-
-The full prepared dataset is not included in this repository.
