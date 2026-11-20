@@ -1,8 +1,5 @@
 # CIRCA — Contrastive Imaging–ROI Cross-view Alignment
 
-This repository contains the archived seed-42 ADHD classification checkpoints
-and their inference code from `adhd_NG_3DSCTF_seed42_archive`.
-
 ## Current checkpoint evaluation
 
 The evaluation entry point imports the archived implementation from `code/`.
