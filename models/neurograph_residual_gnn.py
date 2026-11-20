@@ -1,6 +1,6 @@
 """
-ResidualGNNs from NeuroGraph (inlined for standalone release). https://github.com/Anwar-Said/NeuroGraph
-Original: NeuroGraph model.py
+ResidualGNNs backbone, copied from NeuroGraph (MIT License, Copyright (c) 2023 Anwar Said).
+Source: https://github.com/Anwar-Said/NeuroGraph
 """
 import torch
 from torch import nn

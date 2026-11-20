@@ -1,6 +1,17 @@
 """
-ADHD dataset: 5 npy folds with raw_img_np (96,96,96), raw_img_aal_mask_np, label.
-ROI: per-AAL-region mean of raw_img -> (n_rois,) vector.
+Subject-level dataset for the imaging + ROI-connectivity model (ADHD-200 / ABIDE).
+
+Expected files in `data_dir` (`<prefix>` is e.g. "adhd" or "abide", `<N>` the subject count):
+
+    <prefix>_fold1_<N>.npy ... <prefix>_fold5_<N>.npy   subject records (see README)
+    roi_matrices_<N>.npy                                 (N, n_rois, n_rois) connectivity matrices
+
+The five fold files are concatenated in order 1..5; row i of roi_matrices_<N>.npy must belong to
+subject i of that concatenation. `<N>` is read from the fold-file names.
+
+Demo mode reads the bundled synthetic samples instead (random data, for smoke tests only):
+
+    <prefix>_demo10.npy, roi_matrices_demo10.npy
 """
 
 from pathlib import Path
@@ -10,172 +21,70 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-# Cache full concatenated data by data_dir to avoid reloading for train/val
-_ADHD_CACHE: dict = {}
+_CACHE: dict = {}
 
 
-def _load_adhd_all(
-    data_dir: Path,
-    n_rois: Optional[int] = None,
-    precompute_roi: bool = False,
-    use_test_set_only: bool = False,
-    fold_prefix: str = "adhd",
-    fold_suffix: str = "775",
-):
-    """Load the 5 full folds (cached) or the bundled 10-sample demo (adhd_demo10.npy). use_test_set_only=True loads only the demo file. If precompute_roi, return (data, roi_vectors)."""
-    key_data = str(data_dir) + ("_demo" if use_test_set_only else "") + f"_{fold_prefix}_{fold_suffix}"
-    if key_data not in _ADHD_CACHE:
-        test_file = data_dir / f"{fold_prefix}_demo10.npy"
-        fallback_test_file = data_dir / "adhd_demo10.npy"
-        fold1 = data_dir / f"{fold_prefix}_fold1_{fold_suffix}.npy"
-        fallback_fold1 = data_dir / "adhd_fold1_775.npy"
-        if use_test_set_only:
-            if not test_file.exists():
-                if fold_prefix == "adhd" and fallback_test_file.exists():
-                    test_file = fallback_test_file
-                else:
-                    raise FileNotFoundError(f"Test set not found: {test_file}")
-            _ADHD_CACHE[key_data] = np.load(test_file, allow_pickle=True)
-        elif fold1.exists():
-            arrs = []
-            for k in range(1, 6):
-                p = data_dir / f"{fold_prefix}_fold{k}_{fold_suffix}.npy"
-                if not p.exists():
-                    raise FileNotFoundError(f"Fold file not found: {p}")
-                arrs.append(np.load(p, allow_pickle=True))
-            _ADHD_CACHE[key_data] = np.concatenate(arrs, axis=0)
-        elif fold_prefix == "adhd" and fallback_fold1.exists():
-            arrs = []
-            for k in range(1, 6):
-                p = data_dir / f"adhd_fold{k}_775.npy"
-                if not p.exists():
-                    raise FileNotFoundError(f"ADHD fold not found: {p}")
-                arrs.append(np.load(p, allow_pickle=True))
-            _ADHD_CACHE[key_data] = np.concatenate(arrs, axis=0)
-        elif test_file.exists():
-            _ADHD_CACHE[key_data] = np.load(test_file, allow_pickle=True)
-        elif fold_prefix == "adhd" and fallback_test_file.exists():
-            _ADHD_CACHE[key_data] = np.load(fallback_test_file, allow_pickle=True)
-        else:
-            raise FileNotFoundError(f"Data not found: need {fold_prefix}_fold1_{fold_suffix}.npy or {test_file}")
-    data = _ADHD_CACHE[key_data]
-    if precompute_roi and n_rois is not None:
-        key_roi = f"{key_data}_roi{n_rois}"
-        if key_roi not in _ADHD_CACHE:
-            roi_arr = np.zeros((len(data), n_rois), dtype=np.float32)
-            for i in range(len(data)):
-                raw = np.asarray(data[i]["raw_img_np"], dtype=np.float32)
-                aal = np.asarray(data[i]["raw_img_aal_mask_np"], dtype=np.float32)
-                roi_arr[i] = _aal_mask_to_roi_vector(raw, aal, n_rois)
-            _ADHD_CACHE[key_roi] = roi_arr
-        return (data, _ADHD_CACHE[key_roi])
-    return data
+def resolve_files(data_dir, prefix: str = "adhd", demo: bool = False) -> Tuple[List[Path], Path]:
+    """Return (subject files in concatenation order, default ROI-matrix file)."""
+    data_dir = Path(data_dir)
+    if demo:
+        return [data_dir / f"{prefix}_demo10.npy"], data_dir / "roi_matrices_demo10.npy"
+    first = sorted(data_dir.glob(f"{prefix}_fold1_*.npy"))
+    if len(first) != 1:
+        raise FileNotFoundError(
+            f"Expected exactly one '{prefix}_fold1_<N>.npy' in {data_dir}, found {[p.name for p in first]}. "
+            "Use --demo to run on the bundled 10-subject subset."
+        )
+    suffix = first[0].stem[len(f"{prefix}_fold1_"):]
+    files = [data_dir / f"{prefix}_fold{k}_{suffix}.npy" for k in range(1, 6)]
+    return files, data_dir / f"roi_matrices_{suffix}.npy"
 
 
-def _aal_mask_to_roi_vector(raw_img: np.ndarray, aal_mask: np.ndarray, n_rois: int) -> np.ndarray:
-    """Compute per-ROI mean intensity (vectorized with bincount).
-    AAL mask may use 1..n_rois or non-consecutive codes (e.g. 2001, 2101, ..., 9170); we remap to 1..n_rois.
-    """
-    raw_img = np.asarray(raw_img, dtype=np.float32).ravel()
-    aal_mask = np.asarray(aal_mask, dtype=np.float64).ravel()
-    unique = np.unique(aal_mask)
-    unique_nonzero = unique[unique > 0]
-    if len(unique_nonzero) == 0:
-        return np.zeros(n_rois, dtype=np.float32)
-    # If mask already uses 1..n_rois (and only those), use bincount directly
-    if len(unique_nonzero) <= n_rois and unique_nonzero.max() <= n_rois and unique_nonzero.min() >= 1:
-        aal_int = aal_mask.astype(np.int32)
-        max_lab = min(int(aal_int.max()) + 1, n_rois + 1)
-        sum_by = np.bincount(aal_int, weights=raw_img, minlength=max_lab + 1)
-        cnt_by = np.bincount(aal_int, minlength=max_lab + 1)
-        roi_vec = np.zeros(n_rois, dtype=np.float32)
-        for i in range(1, min(n_rois + 1, len(cnt_by))):
-            if cnt_by[i] > 0:
-                roi_vec[i - 1] = sum_by[i] / cnt_by[i]
-        return roi_vec
-    # Remap non-consecutive AAL codes (e.g. 2001..9170) to 1..n_rois
-    n_actual = min(len(unique_nonzero), n_rois)
-    old_to_new = {int(old): (new + 1) for new, old in enumerate(sorted(unique_nonzero)[:n_rois])}
-    new_mask = np.zeros_like(aal_mask, dtype=np.int32)
-    for old_lab, new_lab in old_to_new.items():
-        new_mask[aal_mask == old_lab] = new_lab
-    max_lab = n_actual + 1
-    sum_by = np.bincount(new_mask, weights=raw_img, minlength=max_lab + 1)
-    cnt_by = np.bincount(new_mask, minlength=max_lab + 1)
-    roi_vec = np.zeros(n_rois, dtype=np.float32)
-    for i in range(1, n_actual + 1):
-        if cnt_by[i] > 0:
-            roi_vec[i - 1] = sum_by[i] / cnt_by[i]
-    return roi_vec
+def _load_subjects(files: List[Path]) -> np.ndarray:
+    key = tuple(str(p) for p in files)
+    if key not in _CACHE:
+        for p in files:
+            if not p.exists():
+                raise FileNotFoundError(f"Missing data file: {p}")
+        _CACHE[key] = np.concatenate([np.load(p, allow_pickle=True) for p in files], axis=0)
+    return _CACHE[key]
 
 
-# Default filename for precomputed ROI vectors (from scripts/precompute_adhd_roi.py)
-ADHD_ROI_VECTORS_FILE = "roi_vectors_775.npy"
-# Precomputed Pearson 116×116 matrices (from scripts/precompute_adhd_roi_matrices.py)
-ADHD_ROI_MATRICES_FILE = "roi_matrices_775.npy"
+def _load_matrices(path: Path, n_subjects: int, n_rois: int) -> np.ndarray:
+    key = str(path)
+    if key not in _CACHE:
+        if not path.exists():
+            raise FileNotFoundError(f"Missing ROI connectivity file: {path}")
+        _CACHE[key] = np.load(path).astype(np.float32)
+    mats = _CACHE[key]
+    if mats.shape != (n_subjects, n_rois, n_rois):
+        raise ValueError(f"{path.name} has shape {mats.shape}, expected {(n_subjects, n_rois, n_rois)}")
+    return mats
 
 
 class ADHDDataset(Dataset):
-    """
-    ADHD: raw_img_np (96,96,96), label; ROI from roi_vectors_775.npy, roi_matrices_775.npy,
-    or computed on the fly. For ROI-based (NeuroGraph) with 116×116 Pearson matrices, set roi_matrices_file.
-    """
+    """Returns {"label", "image": (1, D, H, W), "roi_data": (n_rois, n_rois)} per subject."""
 
     def __init__(
         self,
         data_dir: str,
+        indices: Optional[List[int]] = None,
         use_image: bool = True,
         use_roi: bool = True,
-        n_rois: int = 90,
-        indices: Optional[list] = None,
-        roi_vectors_file: Optional[str] = None,
+        n_rois: int = 116,
+        prefix: str = "adhd",
+        demo: bool = False,
         roi_matrices_file: Optional[str] = None,
-        use_test_set_only: bool = False,
-        fold_prefix: str = "adhd",
-        fold_suffix: str = "775",
     ):
-        data_dir = Path(data_dir)
-        self._data = _load_adhd_all(
-            data_dir,
-            use_test_set_only=use_test_set_only,
-            fold_prefix=fold_prefix,
-            fold_suffix=fold_suffix,
-        )
-        self._roi_vec = None
-        self._roi_mat = None  # (N, n_rois, n_rois) when loading precomputed matrices
-        # For the bundled 10-sample demo, default to its matching ROI matrices.
-        if use_roi and roi_matrices_file is None and len(self._data) == 10 and (data_dir / "roi_matrices_demo10.npy").exists():
-            roi_matrices_file = "roi_matrices_demo10.npy"
+        files, default_roi = resolve_files(data_dir, prefix, demo)
+        self._data = _load_subjects(files)
+        self._roi_mat = None
         if use_roi:
-            if roi_matrices_file:
-                mat_path = data_dir / roi_matrices_file
-                if mat_path.exists():
-                    self._roi_mat = np.load(mat_path).astype(np.float32)
-                    assert self._roi_mat.ndim == 3 and self._roi_mat.shape[0] == len(self._data), (
-                        f"roi_matrices shape {self._roi_mat.shape} vs data len {len(self._data)}"
-                    )
-                    assert self._roi_mat.shape[1] == self._roi_mat.shape[2] == n_rois, (
-                        f"roi_matrices {self._roi_mat.shape[1]}x{self._roi_mat.shape[2]} vs n_rois {n_rois}"
-                    )
-            if self._roi_mat is None:
-                roi_path = data_dir / (roi_vectors_file or ADHD_ROI_VECTORS_FILE)
-                if roi_path.exists():
-                    self._roi_vec = np.load(roi_path).astype(np.float32)
-                    assert self._roi_vec.shape[0] == len(self._data) and self._roi_vec.shape[1] == n_rois, (
-                        f"roi_vectors shape {self._roi_vec.shape} vs data {len(self._data)} n_rois {n_rois}"
-                    )
-                else:
-                    _, self._roi_vec = _load_adhd_all(
-                        data_dir,
-                        n_rois=n_rois,
-                        precompute_roi=True,
-                        fold_prefix=fold_prefix,
-                        fold_suffix=fold_suffix,
-                    )
-        self.indices = indices if indices is not None else list(range(len(self._data)))
+            roi_path = Path(data_dir) / roi_matrices_file if roi_matrices_file else default_roi
+            self._roi_mat = _load_matrices(roi_path, len(self._data), n_rois)
+        self.indices = list(indices) if indices is not None else list(range(len(self._data)))
         self.use_image = use_image
         self.use_roi = use_roi
-        self.n_rois = n_rois
 
     def __len__(self) -> int:
         return len(self.indices)
@@ -183,39 +92,26 @@ class ADHDDataset(Dataset):
     def __getitem__(self, idx: int) -> dict:
         i = self.indices[idx]
         row = self._data[i]
-        label = int(row["label"])
-        out = {"label": label}
+        out = {"label": int(row["label"])}
         if self.use_image:
             img = np.asarray(row["raw_img_np"], dtype=np.float32)
-            if img.ndim == 3:
-                img = img[np.newaxis, ...]
-            out["image"] = torch.from_numpy(img)
+            out["image"] = torch.from_numpy(img[np.newaxis] if img.ndim == 3 else img)
         if self.use_roi:
-            if self._roi_mat is not None:
-                out["roi_data"] = torch.from_numpy(self._roi_mat[i].astype(np.float32))  # (n_rois, n_rois)
-            elif self._roi_vec is not None:
-                out["roi_data"] = torch.from_numpy(self._roi_vec[i].astype(np.float32))
-            else:
-                raw = np.asarray(row["raw_img_np"], dtype=np.float32)
-                aal = np.asarray(row["raw_img_aal_mask_np"], dtype=np.float32)
-                out["roi_data"] = torch.from_numpy(_aal_mask_to_roi_vector(raw, aal, self.n_rois))
+            out["roi_data"] = torch.from_numpy(self._roi_mat[i])
         return out
 
 
-def get_adhd_meta(
-    data_dir: str,
-    use_test_set_only: bool = False,
-    fold_prefix: str = "adhd",
-    fold_suffix: str = "775",
-) -> Tuple[List[int], np.ndarray]:
-    """Return (list of indices 0..N-1, labels array) for StratifiedKFold. If use_test_set_only, load the 10-sample demo (adhd_demo10.npy)."""
-    data_dir = Path(data_dir)
-    data = _load_adhd_all(
-        data_dir,
-        use_test_set_only=use_test_set_only,
-        fold_prefix=fold_prefix,
-        fold_suffix=fold_suffix,
-    )
-    n = len(data)
-    labels = np.array([int(data[i]["label"]) for i in range(n)])
-    return list(range(n)), labels
+def get_adhd_meta(data_dir: str, prefix: str = "adhd", demo: bool = False) -> Tuple[List[int], np.ndarray]:
+    """Return (subject indices 0..N-1, labels) of the concatenated subject list."""
+    files, _ = resolve_files(data_dir, prefix, demo)
+    data = _load_subjects(files)
+    labels = np.array([int(data[i]["label"]) for i in range(len(data))])
+    return list(range(len(data))), labels
+
+
+def collate(batch: List[dict]) -> dict:
+    out = {"label": torch.tensor([b["label"] for b in batch], dtype=torch.long)}
+    for key in ("image", "roi_data"):
+        if key in batch[0]:
+            out[key] = torch.stack([b[key] for b in batch])
+    return out

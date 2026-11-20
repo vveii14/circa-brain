@@ -1,23 +1,16 @@
-"""
-Register the built-in encoders and fusion module for the
-3D-SCTF (image) + NeuroGraph (ROI) contrastive model.
-Import this module once (from models/__init__.py) to populate the registry.
-"""
+"""Register the encoders and fusion heads by name (imported once from models/__init__.py)."""
 
 from . import registry
+from .fusion import ConcatFusion, ContrastiveFusion
 from .image_encoder_3dsctf import ImageEncoder3DSCTF
-from .roi_encoder_brainnet import NeuroGraphROIEncoder
-from .fusion import ContrastiveFusion
+from .roi_encoder_neurograph import NeuroGraphROIEncoder
 
-
-# Image encoder: 3D-SCTF (hybrid depthwise-separable conv + Transformer).
+# Imaging branch: 3DSC-TF (3D depthwise-separable convolution + Transformer).
 registry.IMAGE_ENCODERS["3dsctf"] = ImageEncoder3DSCTF
 
-# ROI encoder: NeuroGraph / BrainNet residual GNN on the connectivity graph.
-# "brainnet" is kept as an alias so checkpoints whose embedded cfg used that
-# key load without modification (same class; the `mode` kwarg is unused).
+# ROI branch: NeuroGraph residual GNN on the ROI connectivity graph.
 registry.ROI_ENCODERS["neurograph"] = NeuroGraphROIEncoder
-registry.ROI_ENCODERS["brainnet"] = NeuroGraphROIEncoder
 
-# Fusion: cross-view contrastive alignment + concat classifier.
-registry.FUSION_MODULES["contrastive"] = ContrastiveFusion
+# Fusion heads.
+registry.FUSION_MODULES["contrastive"] = ContrastiveFusion  # proposed: cross-view contrastive alignment
+registry.FUSION_MODULES["concat"] = ConcatFusion            # ablation: plain concatenation

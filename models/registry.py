@@ -4,7 +4,7 @@ Add new backbones by registering and referring to them by name in config.
 """
 
 import torch.nn as nn
-from typing import Dict, Callable, Any, Optional
+from typing import Callable, Dict
 
 
 # ---------------------------------------------------------------------------
@@ -57,8 +57,7 @@ def build_image_encoder(name: str, feat_dim: int, **kwargs) -> nn.Module:
 def build_roi_encoder(name: str, n_rois: int, feat_dim: int, **kwargs) -> nn.Module:
     if name not in ROI_ENCODERS:
         raise ValueError(f"Unknown roi_encoder: {name}. Available: {list(ROI_ENCODERS.keys())}")
-    # Pass mode=name for encoders that use it (e.g. ROIEncoder)
-    return ROI_ENCODERS[name](n_rois=n_rois, feat_dim=feat_dim, mode=name, **kwargs)
+    return ROI_ENCODERS[name](n_rois=n_rois, feat_dim=feat_dim, **kwargs)
 
 
 def build_fusion(name: str, image_dim: int, roi_dim: int, num_classes: int, **kwargs) -> nn.Module:

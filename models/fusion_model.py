@@ -22,11 +22,11 @@ class ImageROIFusionModel(nn.Module):
         num_classes: int = 2,
         use_image_branch: bool = True,
         use_roi_branch: bool = True,
-        image_encoder: str = "conv3d",
+        image_encoder: str = "3dsctf",
         image_feat_dim: int = 256,
-        roi_encoder: str = "connectivity",
+        roi_encoder: str = "neurograph",
         roi_feat_dim: int = 256,
-        fusion: str = "concat",
+        fusion: str = "contrastive",
         contrastive_temperature: float = 0.07,
         contrastive_weight: float = 0.1,
         dropout: float = 0.3,
@@ -53,11 +53,8 @@ class ImageROIFusionModel(nn.Module):
             image_feat_dim = 0
 
         if use_roi_branch:
-            roi_kw = {k: v for k, v in kwargs.items() if k in ("max_T", "num_classes")}
-            if "num_classes" not in roi_kw:
-                roi_kw["num_classes"] = num_classes
-            roi_enc_kwargs = kwargs.get("roi_encoder_kwargs") or {}
-            roi_kw.update(roi_enc_kwargs)
+            roi_kw = {"num_classes": num_classes}
+            roi_kw.update(kwargs.get("roi_encoder_kwargs") or {})
             self.roi_enc = registry.build_roi_encoder(
                 roi_encoder,
                 n_rois=n_rois,

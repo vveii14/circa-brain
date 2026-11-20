@@ -1,23 +1,11 @@
-# ============================================================================
-# adhd_NG_3DSCTF_Contra  —  training recipe for the joint 3D-SCTF + NeuroGraph
-# contrastive model (paper Table 1: NeuroGraph + 3DSC-TF), seed 42.
-#
-# Hyperparameters recovered verbatim from the embedded cfg of the bundled
-# checkpoint (checkpoints/fold1_best.pth).
-#
-# Tip: the ADHD image data is ~9 GB; for fast, stall-free loading copy
-# data/adhd/*.npy to a RAM disk and set adhd_data_dir: /dev/shm/adhd_data.
-# ============================================================================
+# Training configuration of the proposed model on ADHD-200:
+# 3DSC-TF imaging encoder + NeuroGraph ROI encoder + cross-view contrastive alignment.
+# These are the hyperparameters of the released checkpoints (found with an Optuna search).
 
 seed: 42
-device: cuda
-
-# --- data ---
-data_root: ./data
-adhd_data_dir: ./data/adhd
-n_rois: 116
-roi_matrices_file: roi_matrices_775.npy
-image_shape: [96, 96, 96]
+data_dir: ./data/adhd          # folder with adhd_fold{1..5}_<N>.npy and roi_matrices_<N>.npy
+roi_matrices_file: null        # null -> roi_matrices_<N>.npy, <N> taken from the fold-file names
+n_rois: 116                    # AAL-116 atlas
 num_classes: 2
 
 # --- optimization ---
@@ -29,8 +17,7 @@ dropout: 0.1776180790534864
 label_smoothing: 0.08832787784276229
 max_grad_norm: 2.0
 
-# --- image branch: 3D-SCTF (exact paper recipe) ---
-use_image_branch: true
+# --- imaging branch: 3DSC-TF ---
 image_encoder: 3dsctf
 image_feat_dim: 256
 image_encoder_kwargs:
@@ -43,8 +30,7 @@ image_encoder_kwargs:
   qkv_bias: false
   drop_path_rate: 0.12210055856108193
 
-# --- ROI branch: NeuroGraph / BrainNet ResidualGNN ---
-use_roi_branch: true
+# --- ROI branch: NeuroGraph (residual GNN) ---
 roi_encoder: neurograph
 roi_feat_dim: 256
 roi_encoder_kwargs:
@@ -54,7 +40,7 @@ roi_encoder_kwargs:
   gnn_name: SAGEConv
   edge_top_p: 0.12653208064924712
 
-# --- fusion: contrastive ---
+# --- fusion: cross-view contrastive alignment ---
 fusion: contrastive
 contrastive_temperature: 0.03124888239143141
 contrastive_weight: 0.43019728220797776
