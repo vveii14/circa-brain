@@ -86,24 +86,6 @@ StratifiedKFold(
 
 The five neuroimaging files are concatenated in their original order before fold reconstruction.
 
-### Evaluation Metrics
-
-The evaluator reports the following metrics as percentages:
-
-| Metric | Description |
-|---|---|
-| Accuracy | Overall classification accuracy |
-| AUC | Area under the ROC curve |
-| Sensitivity | True positive rate |
-| Specificity | True negative rate |
-| Macro-F1 | Unweighted mean of per-class F1 scores |
-
-Results are reported for each fold, along with the five-fold mean and sample standard deviation.
-
-Classification predictions use a fixed probability threshold of **0.5**, with no threshold optimization during evaluation. Argmax-based results are also reported for comparison.
-
-**Evaluation scope:** The reported metrics represent reconstructed validation-fold performance based on the archived checkpoints. They should not be interpreted as results from an independent held-out test set.
-
 ## 5. Repository Structure
 
 ```text
