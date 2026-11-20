@@ -100,19 +100,7 @@ CIRCA/
 
 The evaluation entry point imports the archived implementations from `code/` to preserve consistency with the released checkpoints.
 
-## 6. Archive Integrity
-
-To verify the integrity of the current inference release, run:
-
-```bash
-md5sum -c MD5SUMS
-```
-
-The repository also includes `ARCHIVE_MD5SUMS`, which preserves the original archive manifest for provenance.
-
-The checksum of `eval_checkpoints.py` differs between the two manifests because the evaluation script was adapted to support repository-relative default paths and optional command-line directory arguments. These changes concern the evaluation interface and file paths.
-
-## 7. Reproducibility Notes
+## 6. Reproducibility Notes
 
 This release is intended to support evaluation of the archived checkpoints rather than end-to-end reproduction of the original training procedure.
 
